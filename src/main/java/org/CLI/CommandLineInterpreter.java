@@ -5,7 +5,7 @@ import java.io.*;
 
 public class CommandLineInterpreter {
     private File currentDirectory;
-    private Scanner scanner;
+    private final Scanner scanner;
     private StringTokenizer stringTokenizer;
 
     CommandLineInterpreter() {
@@ -13,88 +13,126 @@ public class CommandLineInterpreter {
         this.scanner = new Scanner(System.in);
         System.out.print("\033[H\033[2J");
         System.out.flush();
-        this.execute();
     }
 
     public void execute() {
-        while(true) {
+        while (true) {
             System.out.print(currentDirectory.getAbsolutePath() + ": ");
             String input = scanner.nextLine();
-            this.stringTokenizer = new StringTokenizer(input, " ");
-            String command = stringTokenizer.nextToken();
-            switch (command) {
-                case "exit": {
-                    return;
-                }
-                case "help": {
-                    this.help();
-                    break;
-                }
-                case "pwd": {
-                    this.pwd();
-                    break;
-                }
-                case "cd": {
-
-                    this.cd();
-                    break;
-                }
-                case "ls": {
-                    this.ls();
-                    break;
-                }
-                case "mkdir": {
-                    this.mkdir();
-                    break;
-                }
-                case "rmdir": {
-                    this.rmdir();
-                    break;
-                }
-                case "touch": {
-                    this.touch();
-                    break;
-                }
-                case "rm": {
-                    this.rm();
-                    break;
-                }
-                case "cat": {
-                    this.cat();
-                    break;
-                }
-                case "mv": {
-                    this.mv();
-                    break;
-                }
-                default: {
-                    break;
-                }
+            if (!processInput(input)) {
+                break; // Exit command
             }
-
         }
     }
 
-    public void exit() {
-
+    public boolean processInput(String input) {
+        this.stringTokenizer = new StringTokenizer(input, " ");
+        String command = stringTokenizer.nextToken();
+        List<String> commandArguments = new ArrayList<>();
+        while(stringTokenizer.hasMoreElements()) {
+            commandArguments.add(stringTokenizer.nextToken());
+        }
+        switch (command) {
+            case "exit": {
+                return false;
+            }
+            case "help": {
+                String[] res = this.help();
+                for (String help : res) {
+                    System.out.println(help);
+                }
+                break;
+            }
+            case "pwd": {
+                System.out.println(this.pwd());
+                break;
+            }
+            case "cd": {
+                this.cd(commandArguments);
+                break;
+            }
+            case "ls": {
+                String[] res = this.executeLs(commandArguments);
+                if (res != null) {
+                    for (String s : res) {
+                        System.out.println(s);
+                    }
+                }
+                break;
+            }
+            case "mkdir": {
+                this.mkdir(commandArguments);
+                break;
+            }
+            case "rmdir": {
+                this.rmdir(commandArguments);
+                break;
+            }
+            case "touch": {
+                this.touch(commandArguments);
+                break;
+            }
+            case "rm": {
+                this.rm(commandArguments);
+                break;
+            }
+            case "cat": {
+                String[] res = this.executeCat(commandArguments);
+                if (res != null) {
+                    for (String s : res) {
+                        System.out.println(s);
+                    }
+                }
+                break;
+            }
+            case "mv": {
+                this.mv(commandArguments);
+                break;
+            }
+            default: {
+                break;
+            }
+        }
+        return true;
     }
 
-    public String help() {
-        return "";
+    public String[] help() {
+        List<String> helpMessages = new ArrayList<>();
+
+        helpMessages.add("Available Commands:");
+        helpMessages.add("1. pwd         : Prints the current working directory.");
+        helpMessages.add("2. cd <dir>   : Changes the current directory to <dir>.");
+        helpMessages.add("3. ls         : Lists files in the current directory.");
+        helpMessages.add("4. ls -a      : Lists all files, including hidden files.");
+        helpMessages.add("5. ls -r      : Lists files in reverse order.");
+        helpMessages.add("6. mkdir <dir>: Creates a new directory named <dir>.");
+        helpMessages.add("7. rmdir <dir>: Removes an empty directory named <dir>.");
+        helpMessages.add("8. touch <file>: Creates a new file named <file>.");
+        helpMessages.add("9. mv <src> <dest>: Moves or renames a file or directory.");
+        helpMessages.add("10. rm <file> : Removes a file named <file>.");
+        helpMessages.add("11. cat <file>: Displays the contents of <file>.");
+        helpMessages.add("12. > <file>  : Redirects output to <file> (overwrites).");
+        helpMessages.add("13. >> <file> : Redirects output to <file> (appends).");
+        helpMessages.add("14. |         : Pipes the output of one command to another.");
+        helpMessages.add("15. exit      : Terminates the CLI.");
+        helpMessages.add("16. help      : Displays this help message.");
+
+        // Convert List<String> to String[] and return
+        return helpMessages.toArray(new String[0]);
     }
 
     public String pwd() {
-        return System.getProperty("user.dir");
+        return this.currentDirectory.getAbsolutePath();
     }
 
-    public boolean cd() {
-        if (stringTokenizer.countTokens() > 2) {
+    public boolean cd(List<String> commandArguments) {
+        if (commandArguments.size() != 1) {
             System.out.println("Wrong Command");
             return false;
         }
-        String targetDirectory = stringTokenizer.nextToken();
+        String targetDirectory = commandArguments.getFirst();
 
-        File newDir = new File(targetDirectory);
+        File newDir = new File(this.currentDirectory, targetDirectory);
         if (targetDirectory.equals("..")) {
             newDir = new File(currentDirectory.getParent());
         }
@@ -107,111 +145,141 @@ public class CommandLineInterpreter {
         return true;
     }
 
-    public String[] ls() {
-        if (this.stringTokenizer.countTokens() > 2) {
-            System.out.println("Wrong Command");
+    public String[] executeLs(List<String> commandArguments) {
+        boolean showAll = false;
+        boolean reverse = false;
+        String outputFileName = null;
+        boolean append = false;
+
+        // Parse options and detect redirection
+        for (String option : commandArguments) {
+            switch (option) {
+                case "-a":
+                    showAll = true;
+                    break;
+                case "-r":
+                    reverse = true;
+                    break;
+                case ">":
+                    append = false;
+                    outputFileName = getNextArgument(option, commandArguments);
+                    break;
+                case ">>":
+                    append = true;
+                    outputFileName = getNextArgument(option, commandArguments);
+                    break;
+                default:
+                    return null;
+            }
+
+            // Stop further parsing if redirection is detected
+            if (outputFileName != null) break;
+        }
+
+        // Call ls function to get the list of files
+        String[] result = ls(showAll, reverse);
+
+        // Prepare output
+        StringBuilder output = new StringBuilder();
+        for (String file : result) {
+            output.append(file).append("\n");
+        }
+
+        // Redirect output if needed
+        if (outputFileName != null) {
+            if (append) {
+                appendOutput(output.toString(), outputFileName);
+            } else {
+                redirectOutput(output.toString(), outputFileName);
+            }
+        }
+        return result;
+    }
+
+    // Helper function to handle `ls` listing based on flags
+    private String[] ls(boolean showAll, boolean reverse) {
+        File[] allFiles = this.currentDirectory.listFiles();
+        if (allFiles == null) {
+            return new String[0];
+        }
+
+        List<String> filteredFiles = new ArrayList<>();
+        for (File file : allFiles) {
+            if (showAll || !file.isHidden()) {
+                filteredFiles.add(file.getName());
+            }
+        }
+
+        Collections.sort(filteredFiles);
+
+        if (reverse) {
+            Collections.reverse(filteredFiles);
+        }
+
+        return filteredFiles.toArray(new String[0]);
+    }
+
+    // Get the next argument after `>` or `>>` for the output file name
+    private String getNextArgument(String currentOption, List<String> commandArguments) {
+        int index = commandArguments.indexOf(currentOption);
+        if (index >= 0 && index + 1 < commandArguments.size()) {
+            return commandArguments.get(index + 1);
+        } else {
+            System.out.println("Error: No output file specified for " + currentOption);
             return null;
         }
-
-        boolean showAll = false;
-        boolean recursive = false;
-
-        while (this.stringTokenizer.hasMoreTokens()) {
-            String option = this.stringTokenizer.nextToken();
-            if (option.equals("-a")) {
-                showAll = true;
-            } else if (option.equals("-r")) {
-                recursive = true;
-            } else {
-                System.out.println("Invalid option: " + option);
-                return null;
-            }
-        }
-
-        List<String> fileList = listFiles(this.currentDirectory, showAll, recursive, "");
-        return fileList.toArray(new String[0]);
-    }
-
-    private List<String> listFiles(File directory, boolean showAll, boolean recursive, String indent) {
-        List<String> fileList = new ArrayList<>();
-
-        if (!directory.isDirectory()) {
-            System.out.println(directory.getName() + " is not a directory");
-            return fileList;
-        }
-
-        String[] files = directory.list();
-        if (files == null) {
-            return fileList;
-        }
-
-        for (String fileName : files) {
-            File file = new File(directory, fileName);
-
-            if (file.isHidden() && !showAll) {
-                continue;
-            }
-
-            fileList.add(indent + file.getName());
-
-            if (recursive && file.isDirectory()) {
-                fileList.addAll(listFiles(file, showAll, true, indent + "  "));
-            }
-        }
-        return fileList;
     }
 
 
-    public boolean mkdir() {
-        if (!this.stringTokenizer.hasMoreTokens()) {
+
+
+    public boolean mkdir(List<String> commandArguments) {
+        if (commandArguments.isEmpty()) {
             System.out.println("Usage: mkdir <directory_name> [additional_directory_names...]");
             return false;
         }
 
-        while (this.stringTokenizer.hasMoreTokens()) {
-            String dirName = this.stringTokenizer.nextToken();
-            File newDir = new File(this.currentDirectory, dirName);
+        for (String argument: commandArguments) {
+            File newDir = new File(this.currentDirectory, argument);
 
             if (newDir.exists()) {
-                System.out.println("Directory '" + dirName + "' already exists.");
+                System.out.println("Directory '" + argument + "' already exists.");
                 continue;
             }
 
             if (newDir.mkdir()) {
-                System.out.println("Directory '" + dirName + "' created successfully.");
+                System.out.println("Directory '" + argument + "' created successfully.");
             } else {
-                System.out.println("Error: Could not create directory '" + dirName + "'. Please check the name and try again.");
+                System.out.println("Error: Could not create directory '" + argument + "'. Please check the name and try again.");
             }
         }
         return true;
     }
 
-    public boolean rmdir() {
-        String fileName = this.stringTokenizer.nextToken();
-        File newFile = new File(fileName);
+    public boolean rmdir(List<String> commandArguments) {
+        File newFile = new File(this.currentDirectory, commandArguments.getFirst());
         return newFile.delete();
     }
 
-    public boolean touch() {
-        if (!this.stringTokenizer.hasMoreTokens()) {
+    public boolean touch(List<String> commandArguments) {
+        if (commandArguments.isEmpty()) {
             System.out.println("Usage: touch <file_name> [additional_file_names...]");
             return false;
         }
 
-        while (this.stringTokenizer.hasMoreTokens()) {
-            String fileName = this.stringTokenizer.nextToken();
-            File newFile = new File(this.currentDirectory, fileName);
+        for (String argument : commandArguments) {
+            File newFile = new File(this.currentDirectory, argument);
 
             try {
                 if (newFile.exists()) {
-                    System.out.println("File '" + fileName + "' already exists.");
+                    System.out.println("File '" + argument + "' already exists.");
                     continue;
                 }
 
                 if (newFile.createNewFile()) {
-                    System.out.println("File '" + fileName + "' created successfully.");
+                    System.out.println("File '" + argument + "' created successfully.");
                 } else {
-                    System.out.println("Error: Could not create file '" + fileName + "'.");
+                    System.out.println("Error: Could not create file '" + argument + "'.");
                 }
             } catch (IOException e) {
                 System.out.println("Error: " + e.getMessage());
@@ -221,54 +289,114 @@ public class CommandLineInterpreter {
         return true;
     }
 
-    public void mv() {
-        if (this.stringTokenizer.countTokens() != 3) {
+    public boolean mv(List<String> commandArguments) {
+        if (commandArguments.size() != 2) {
             System.out.println("Usage: mv <source> <destination>");
-            return;
+            return false;
         }
 
-        String sourcePath = this.stringTokenizer.nextToken();
-        String destinationPath = this.stringTokenizer.nextToken();
-
-        File sourceFile = new File(this.currentDirectory, sourcePath);
-        File destinationFile = new File(this.currentDirectory, destinationPath);
+        File sourceFile = new File(this.currentDirectory, commandArguments.getFirst());
+        File destinationFile = new File(this.currentDirectory, commandArguments.getLast());
 
         if (!sourceFile.exists()) {
             System.out.println("Error: Source file does not exist");
-            return;
+            return false;
         }
-
+        if (destinationFile.isDirectory()) {
+            destinationFile = new File(destinationFile, sourceFile.getName());
+        }
         if (sourceFile.renameTo(destinationFile)) {
             System.out.println("File moved successfully");
+            return true;
         } else {
             System.out.println("Error: Unable to move the file");
+            return false;
         }
     }
 
-    public void rm() {
-        String fileName = this.stringTokenizer.nextToken();
-        File newFile = new File(fileName);
-        if (newFile.isDirectory()) {
-            System.out.println("Can't remove a directory using this command, try rmdir");
+    public boolean rm(List<String> commandArguments) {
+        for (String fileName : commandArguments) {
+            File newFile = new File(this.currentDirectory, fileName);
+            if (newFile.isDirectory()) {
+                System.out.println("Can't remove a directory using this command, try rmdir");
+                return false;
+            }
+            if (!newFile.delete()) {
+                System.out.println("Please enter a valid file name");
+                return false;
+            }
         }
-        if (!newFile.delete()) {
-            System.out.println("Please enter a valid file name");
-        }
+
+        return true;
     }
 
-    public void cat() {
-        if (this.stringTokenizer.countTokens() > 2) {
-            System.out.println("Usage: cat <file_name>");
-            return;
+    public String[] executeCat(List<String> commandArguments) {
+        // Validate command arguments
+        if (commandArguments.isEmpty()) {
+            System.out.println("Usage: cat <file_name> [> <output_file>] [>> <output_file>]");
+            return null;
         }
-        File file = new File(this.stringTokenizer.nextToken());
+
+        String fileName = commandArguments.getFirst();
+        File file = new File(this.currentDirectory, fileName);
+        List<String> res = new ArrayList<>();
+        String outputFileName = null;
+        boolean append = false;
+
+        // Check for redirection in the command arguments
+        for (int i = 1; i < commandArguments.size(); i++) {
+            String option = commandArguments.get(i);
+            if (">".equals(option) || ">>".equals(option)) {
+                if (i + 1 < commandArguments.size()) {
+                    outputFileName = commandArguments.get(i + 1);
+                    append = ">>".equals(option);
+                    break; // Stop processing after finding redirection
+                } else {
+                    System.out.println("Error: No output file specified after " + option);
+                    return null;
+                }
+            }
+        }
+
+        // Read the file content
         try (BufferedReader br = new BufferedReader(new FileReader(file))) {
             String line;
             while ((line = br.readLine()) != null) {
-                System.out.println(line);
+                res.add(line); // Store the line in the result list
             }
-        } catch (Exception e) {
-            System.out.println(e.getMessage());;
+        } catch (IOException e) {
+            System.out.println("Error reading file: " + e.getMessage());
+        }
+
+        // Handle output redirection
+        if (outputFileName != null) {
+            String output = String.join("\n", res);
+            if (append) {
+                appendOutput(output, outputFileName);
+            } else {
+                redirectOutput(output, outputFileName);
+            }
+        }
+
+        // Convert List<String> to String[] and return
+        return res.toArray(new String[0]);
+    }
+
+    // Function to overwrite output in a file (for `>` redirection)
+    public void redirectOutput(String output, String fileName) {
+        try (FileWriter writer = new FileWriter(this.currentDirectory.getName() + '/' + fileName, false)) {  // false means overwrite
+            writer.write(output);
+        } catch (IOException e) {
+            System.out.println("Error writing to file: " + e.getMessage());
+        }
+    }
+
+    // Function to append output to a file (for `>>` redirection)
+    public void appendOutput(String output, String fileName) {
+        try (FileWriter writer = new FileWriter(this.currentDirectory.getName() + '/' + fileName, true)) {  // true means append
+            writer.write(output);
+        } catch (IOException e) {
+            System.out.println("Error writing to file: " + e.getMessage());
         }
     }
 
